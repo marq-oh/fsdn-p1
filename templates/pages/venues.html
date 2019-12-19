@@ -12,33 +12,35 @@
 				<i class="fas fa-music"></i>
 				<div class="item">
 					<h5>
-						{{ venue.name }} ==>
-						<input type="hidden" name="del_form" data-id="{{ venue.id }}" value="{{ venue.id }}">
-						<button class="delete-button" data-id="{{ venue.id }}">Delete</button>
+						{{ venue.name }}
 					</h5>
 				</div>
 			</a>
-
+			<input type="hidden" name="del_form" data-id="{{ venue.id }}" value="{{ venue.id }}">
+			<button class="delete-button" data-id="{{ venue.id }}">&cross;</button>
 			{% endif %}
 		</li>
 		{% endfor %}
 	</ul>
-    <script>
-      const deleteBtns = document.querySelectorAll('.delete-button');
-
-      for (let i = 0; i < deleteBtns.length; i++) {
-        const btn = deleteBtns[i];
-        btn.onclick = function(e) {
-          const venueId = e.target.dataset['id'];
-          fetch('/venues/' + venueId, {
-            method: 'DELETE'
-          })
-          .then(function() {
-            const item = e.target.parentElement;
-            item.remove();
-          })
-        }
-      }
-     </script>
 {% endfor %}
+
+<script>
+  const deleteBtns = document.querySelectorAll('.delete-button');
+
+  for (let i = 0; i < deleteBtns.length; i++) {
+	const btn = deleteBtns[i];
+	btn.onclick = function(e) {
+	  const venueId = e.target.dataset['id'];
+	  fetch('/venues/' + venueId, {
+		method: 'DELETE'
+	  })
+	  .then(function() {
+		const item = e.target.parentElement;
+		item.remove();
+		location.href = '/';
+	  })
+	}
+  }
+
+ </script>
 {% endblock %}

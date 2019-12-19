@@ -10,7 +10,10 @@
 			ID: {{ artist.id }}
 		</p>
 		<div class="genres">
-			<span class="genre">{{ artist.genres }}</span>
+			{% set glist = artist.genres.split(',') %}
+			{% for item in glist %}
+				<span class="genre">{{ item }}</span>
+			{% endfor %}
 		</div>
 		<p>
 			<i class="fas fa-globe-americas"></i> {{ artist.city }}, {{ artist.state }}

@@ -5,13 +5,14 @@
 import json
 import dateutil.parser
 import babel
-from flask import Flask, render_template, request, Response, flash, redirect, url_for
+from flask import Flask, render_template, request, Response, flash, redirect, url_for, jsonify, json
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
 #import psycopg2
 from flask_migrate import Migrate
 import logging
 from logging import Formatter, FileHandler
+from datetime import datetime
 from flask_wtf import Form
 from forms import *
 #----------------------------------------------------------------------------#
@@ -28,6 +29,7 @@ migrate = Migrate(app, db)
 # Models.
 #----------------------------------------------------------------------------#
 
+# Venue model
 class Venue(db.Model):
     __tablename__ = 'Venue'
 
@@ -47,8 +49,9 @@ class Venue(db.Model):
     show = db.relationship('Show', backref='venue', lazy=True)
 
     def __repr__(self):
-      return f'<Todo {self.id} {self.name}>'
+      return f'<Venue {self.id} {self.name}>'
 
+# Artist model
 class Artist(db.Model):
   __tablename__ = 'Artist'
 
@@ -66,39 +69,32 @@ class Artist(db.Model):
   show = db.relationship('Show', backref='artist', lazy=True)
 
   def __repr__(self):
-    return f'<Todo {self.id} {self.name}>'
+    return f'<Artist {self.id} {self.name}>'
 
+# Show model
 class Show(db.Model):
     __tablename__ = 'Show'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     venue_id = db.Column(db.Integer, db.ForeignKey('Venue.id'), nullable=False)
     artist_id = db.Column(db.Integer, db.ForeignKey('Artist.id'), nullable=False)
-    start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    start_time = db.Column(db.DateTime, nullable=False)
     created_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     def __repr__(self):
-      return f'<Todo {self.id} {self.start_time}>'
+      return f'<Show {self.id} {self.start_time}>'
 
 #----------------------------------------------------------------------------#
 # Filters.
 #----------------------------------------------------------------------------#
 
-#def format_datetime(value, format='medium'):
-#  date = dateutil.parser.parse(value)
-#  if format == 'full':
-#      format="EEEE MMMM, d, y 'at' h:mma"
-#  elif format == 'medium':
-#      format="EE MM, dd, y h:mma"
-#  return babel.dates.format_datetime(date, format)
-
 def format_datetime(value, format='medium'):
-  #date = dateutil.parser.parse(value)
+  date = dateutil.parser.parse(value)
   if format == 'full':
-      format="EEEE, d. MMMM y 'at' HH:mm"
+      format="EEEE MMMM, d, y 'at' h:mma"
   elif format == 'medium':
-      format="EE, dd.MM.y 'at' HH:mm"
-  return babel.dates.format_datetime(value, format)
+      format="EE MM, dd, y h:mma"
+  return babel.dates.format_datetime(date, format)
 
 app.jinja_env.filters['datetime'] = format_datetime
 
@@ -108,7 +104,11 @@ app.jinja_env.filters['datetime'] = format_datetime
 
 @app.route('/')
 def index():
-  return render_template('pages/home.html')
+  # Queries to get latest 10 records for artists and venues
+  recent_artist_data = Artist.query.order_by(db.desc(Artist.created_date)).limit(10)
+  recent_venue_data = Venue.query.order_by(db.desc(Venue.created_date)).limit(10)
+
+  return render_template('pages/home.html', recent_artists=recent_artist_data, recent_venues=recent_venue_data)
 
 
 #  Venues
@@ -116,8 +116,12 @@ def index():
 
 @app.route('/venues')
 def venues():
+  # Query to just get City and State to support grouping by City and State in view
   area_data = Venue.query.with_entities(Venue.city, Venue.state).distinct()
+
+  # Query to get all venue data. Grouping by City and State to be done in view
   venue_data = Venue.query.all()
+
   return render_template('pages/venues.html', areas=area_data, venues=venue_data)
 
 @app.route('/venues/search', methods=['POST'])
@@ -127,12 +131,12 @@ def search_venues():
 
   return render_template('pages/search_venues.html', results=response, search_term=term)
 
-@app.route('/venues/<int:venue_id>')
+@app.route('/venues/<int:venue_id>', methods=['GET'])
 def show_venue(venue_id):
   venue_detail = Venue.query.get(venue_id)
-
   artist_detail = Artist.query.all()
 
+  # Setting up query to be able to determine Upcoming vs Past shows based on current datetime
   current_time = datetime.utcnow()
   upcomingshows_data = Show.query.filter(Show.venue_id == venue_id).filter(Show.start_time >= current_time).all()
   pastshows_data = Show.query.filter(Show.venue_id == venue_id).filter(Show.start_time < current_time).all()
@@ -148,47 +152,47 @@ def create_venue_form():
 
 @app.route('/venues/create', methods=['POST'])
 def create_venue_submission():
-  try:
-      newVenue = Venue(name = request.form['name'],
-                       city = request.form['city'],
-                       state = request.form['state'],
-                       address = request.form['address'],
-                       phone = request.form['phone'],
-                       genres = request.form['genres'],
-                       facebook_link = request.form['facebook_link'])
+    try:
+        # Convert list to string with commas so that genres list can be displayed properly in view
+        selected_genres = request.form.getlist('genres')
+        selected_genres = ','.join(map(str, selected_genres))
+        cleaned_genres_list = selected_genres.translate({ord(i): None for i in '[]'})
 
-      db.session.add(newVenue)
-      db.session.commit()
+        newVenue = Venue(name=request.form['name'],
+                         city=request.form['city'],
+                         state=request.form['state'],
+                         address=request.form['address'],
+                         phone=request.form['phone'],
+                         genres=cleaned_genres_list,
+                         facebook_link=request.form['facebook_link'])
 
-      flash('Venue ' + request.form['name'] + ' was successfully listed!')
+        db.session.add(newVenue)
+        db.session.commit()
 
-  except:
-      db.session.rollback()
+        flash('Venue ' + request.form['name'] + ' was successfully listed!')
 
-      flash('An error occurred. Venue ' + request.form['name'] + ' could not be listed.')
+    except:
+        db.session.rollback()
 
-  finally:
-      db.session.close()
+        flash('An error occurred. Venue ' + request.form['name'] + ' could not be listed.')
 
-  return render_template('pages/home.html')
+    finally:
+        db.session.close()
+
+    return render_template('pages/home.html')
 
 @app.route('/venues/<venue_id>', methods=['DELETE'])
 def delete_venue(venue_id):
   try:
-      Venue.query.filter_by(venue_id).delete()
+      Show.query.filter_by(venue_id=venue_id).delete()
+      Venue.query.filter_by(id=venue_id).delete()
       db.session.commit()
-
-      flash("Venue was successfully deleted!")
-
   except:
-      db.session.rollback()
-
-      flash('An error occurred. Venue could not be deleted.')
-
+    db.session.rollback()
   finally:
-      db.session.close()
+    db.session.close()
 
-  return render_template('pages/home.html')
+  return jsonify({ 'success': True })
 
 #  Artists
 #  ----------------------------------------------------------------
@@ -209,6 +213,7 @@ def show_artist(artist_id):
   artist_detail = Artist.query.get(artist_id)
   venue_detail = Venue.query.all()
 
+  # Setting up query to be able to determine Upcoming vs Past shows based on current datetime
   current_time = datetime.utcnow()
   upcomingshows_data = Show.query.filter(Show.artist_id == artist_id).filter(Show.start_time >= current_time).all()
   pastshows_data = Show.query.filter(Show.artist_id == artist_id).filter(Show.start_time < current_time).all()
@@ -229,11 +234,16 @@ def edit_artist(artist_id):
 
 def edit_artist_submission(artist_id):
   try:
+      # Convert list to string with commas so that genres list can be displayed properly in view
+      selected_genres = request.form.getlist('genres')
+      selected_genres = ','.join(map(str, selected_genres))
+      cleaned_genres_list = selected_genres.translate({ord(i): None for i in '[]'})
+
       artist_q = Artist.query.get(artist_id)
       artist_q.name = request.form['name']
       artist_q.city = request.form['city']
       artist_q.state = request.form['state']
-      artist_q.genres = request.form['genres']
+      artist_q.genres = cleaned_genres_list
       artist_q.facebook_link = request.form['facebook_link']
 
       db.session.commit()
@@ -259,13 +269,18 @@ def edit_venue(venue_id):
 @app.route('/venues/<int:venue_id>/edit', methods=['POST'])
 def edit_venue_submission(venue_id):
   try:
+      # Convert list to string with commas so that genres list can be displayed properly in view
+      selected_genres = request.form.getlist('genres')
+      selected_genres = ','.join(map(str, selected_genres))
+      cleaned_genres_list = selected_genres.translate({ord(i): None for i in '[]'})
+
       venue_q = Venue.query.get(venue_id)
       venue_q.name = request.form['name']
       venue_q.city = request.form['city']
       venue_q.state = request.form['state']
       venue_q.address = request.form['address']
       venue_q.phone = request.form['phone']
-      venue_q.genres = request.form['genres']
+      venue_q.genres = cleaned_genres_list
       venue_q.facebook_link = request.form['facebook_link']
 
       db.session.commit()
@@ -292,11 +307,16 @@ def create_artist_form():
 @app.route('/artists/create', methods=['POST'])
 def create_artist_submission():
   try:
+      # Convert list to string with commas so that genres list can be displayed properly in view
+      selected_genres = request.form.getlist('genres')
+      selected_genres = ','.join(map(str, selected_genres))
+      cleaned_genres_list = selected_genres.translate({ord(i): None for i in '[]'})
+
       newArtist = Artist(name = request.form['name'],
                        city = request.form['city'],
                        state = request.form['state'],
                        phone = request.form['phone'],
-                       genres = request.form['genres'],
+                       genres = cleaned_genres_list,
                        facebook_link = request.form['facebook_link'])
 
       db.session.add(newArtist)
